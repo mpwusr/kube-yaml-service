@@ -18,9 +18,9 @@ This project provides a RESTful API to apply Kubernetes manifests (YAML, JSON, o
 
 ---
 
-## 🛠 Build & Run (Local Development)
+## Build & Run (Local Development)
 
-### ✅ Prerequisites
+### Prerequisites
 
 - Java 17+
 - Gradle 8.14+ (or use `./gradlew`)
@@ -31,7 +31,7 @@ This project provides a RESTful API to apply Kubernetes manifests (YAML, JSON, o
 
 ---
 
-## 📦 Build the JAR
+## Build the JAR
 
 ```bash
 ./gradlew clean bootJar
@@ -39,18 +39,17 @@ Expected output:
 
 build/libs/kube-yaml-service-0.0.1-SNAPSHOT.jar
 ```
-🐳 Build and Run with nerdctl
-🏗 Build image using nerdctl:
+Build and Run with nerdctl
 ```
 nerdctl build -t kube-yaml-service:latest .
 ```
 Make sure Dockerfile exists and uses build/libs/kube-yaml-service-0.0.1-SNAPSHOT.jar.
 
-🚀 Run the container
+Run the container
 ```
 nerdctl run -d -p 8080:8080 --name kube-service kube-yaml-service:latest
 ```
-🔁 Test with Postman or curl
+Test with Postman or curl
 Create instructions.json
 ```
 [
@@ -66,13 +65,13 @@ curl -X POST http://localhost:8080/kube/apply \
   -H "Content-Type: application/json" \
   --data-binary @instructions.json
   ```
-🧠 Returns "Resources applied successfully." or a failure message.
+Returns "Resources applied successfully." or a failure message.
 
-🧪 Run Tests
+Run Tests
 ```
 ./gradlew clean test
 ```
-⚙️ Kubernetes Deployment (Optional)
+Kubernetes Deployment (Optional)
 To deploy this Spring Boot service into your Rancher Desktop or other Kubernetes cluster:
 
 ```
@@ -85,13 +84,13 @@ Mount any needed local YAMLs or Helm charts as volumes
 
 Set service account permissions (if using in-cluster mode)
 
-📘 Swagger UI
+Swagger UI
 If enabled (via springdoc-openapi), Swagger is accessible at:
 
 ```
 http://localhost:8080/swagger-ui.html
 ```
-📝 License
+License
 This project is licensed under the MIT License. See LICENSE for details.
 
 Ready to paste into your `README.md`!
