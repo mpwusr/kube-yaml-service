@@ -2,6 +2,11 @@ package com.example.kube.controller;
 
 import com.example.kube.service.KubernetesYamlServiceApp;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -20,6 +25,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/kube")
+@Tag(name = "Kubernetes YAML API", description = "Apply Kubernetes or Helm resources from JSON instructions")
 public class KubernetesController {
 
     private final OkHttpClient client;
@@ -38,6 +44,16 @@ public class KubernetesController {
     }
 
     @PostMapping("/apply")
+    @Operation(
+            summary = "Apply Kubernetes or Helm resources",
+            description = "Reads JSON-formatted instructions pointing to YAML/Helm charts and applies them to the cluster.",
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "Successfully applied all resources",
+                            content = @Content(schema = @Schema(implementation = String.class))),
+                    @ApiResponse(responseCode = "400", description = "Invalid input or unsupported action"),
+                    @ApiResponse(responseCode = "500", description = "Kubernetes API error or IO failure")
+            }
+    )
     public String applyResources(
             @org.springframework.web.bind.annotation.RequestBody List<Map<String, Object>> instructions
     ) throws IOException {

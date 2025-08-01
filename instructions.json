@@ -1,0 +1,14 @@
+[
+  {
+    "uri": "file:///path/to/your/deployment.yaml",
+    "action": "create"
+  },
+  {
+    "uri": "https://example.com/k8s/helm-chart.tgz",
+    "action": "replace"
+  },
+  {
+    "uri": "file:///path/to/json-resources.json",
+    "action": "delete"
+  }
+]
