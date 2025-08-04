@@ -187,11 +187,8 @@ curl -X POST http://127.0.0.1:30080/kube/apply \
 --data-binary @instructions.json
 Resources applied successfully.
 ```
-
+## License
 License
+MIT
 This project is licensed under the MIT License. See LICENSE for details.
 
-Ready to paste into your `README.md`!
-## License
-
-MIT
