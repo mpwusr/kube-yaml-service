@@ -165,34 +165,6 @@ You should see something like:
 NAME                                  READY   STATUS    RESTARTS   AGE
 kube-yaml-service-6c8d6d5f78-mnxyz    1/1     Running   0          20s
 ```
-
-### Expose service for host access
-K3s in Rancher Desktop runs inside a Lima VM, so NodePort is the easiest way to reach it from macOS:
-
-Edit 10-deployment.yaml service section:
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: kube-yaml-service
-  namespace: kube-yaml-svc
-spec:
-  selector:
-    app: kube-yaml-service
-  ports:
-    - name: http
-      port: 80
-      targetPort: 8080
-      nodePort: 30080
-  type: NodePort
-```
-
-Re-apply:
-
-```bash
-kubectl apply -f k8s/10-deployment.yaml
-```
 ### Find the VM IP
 From macOS:
 
