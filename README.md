@@ -103,9 +103,37 @@ You should now have:
 ```bash
 build/libs/kube-yaml-service-0.0.1-SNAPSHOT.jar
 ```
+## Make sure you have access to the Rancher K3S cluster
+```
+michaelwilliams@Michaels-MBP ~ % rdctl shell sudo cat /etc/rancher/k3s/k3s.yaml > ~/k3s.yaml
 
 ### Build the image with nerdctl
-Since Rancher Desktop uses containerd, you need nerdctl to build the image inside the VM’s containerd store:
+michaelwilliams@Michaels-MBP ~ % export KUBECONFIG=~/k3s.yaml                               
+kubectl get nodes
+
+NAME                   STATUS   ROLES                  AGE     VERSION
+lima-rancher-desktop   Ready    control-plane,master   4m44s   v1.32.5+k3s1
+michaelwilliams@Michaels-MBP ~ % echo 'export KUBECONFIG=~/k3s.yaml' >> ~/.zshrc
+michaelwilliams@Michaels-MBP ~ % source ~/.zshrc
+michaelwilliams@Michaels-MBP ~ % kubectl get nodes
+NAME                   STATUS   ROLES                  AGE     VERSION
+lima-rancher-desktop   Ready    control-plane,master   6m18s   v1.32.5+k3s1
+```
+## Extract certificate from Kubeconfig (linux command line)
+```
+kubectl config view --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' | base64 -d > openshift-ca.crt
+```
+## Extract certificate from Kubeconfig (windows cmd prompt)
+```
+kubectl config view --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' > encoded.txt
+certutil -decode encoded.txt openshift-ca.crt 
+```
+## Extract certificate from Kubeconfig (windows power shell)
+```
+$base64 = oc config view --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}'
+[System.Text.Encoding]::ASCII.GetString([System.Convert]::FromBase64String($base64)) | Out-File -Encoding ascii openshift-ca.crt
+```
+# Build the image with nerdctl
 
 ```bash
 nerdctl build -t kube-yaml-service:latest .
