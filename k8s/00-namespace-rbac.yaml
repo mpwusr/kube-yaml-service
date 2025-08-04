@@ -1,4 +1,3 @@
-# k8s/00-namespace.yaml
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -10,7 +9,7 @@ metadata:
   name: kube-yaml-sa
   namespace: kube-yaml-svc
 ---
-# Very permissive for demo; tighten for prod
+# NOTE: This is intentionally broad for demos. Tighten in production!
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
