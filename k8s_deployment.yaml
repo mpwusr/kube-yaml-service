@@ -1,0 +1,37 @@
+# k8s/10-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kube-yaml-service
+  namespace: kube-yaml-svc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kube-yaml-service
+  template:
+    metadata:
+      labels:
+        app: kube-yaml-service
+    spec:
+      serviceAccountName: kube-yaml-sa
+      containers:
+        - name: app
+          image: kube-yaml-service:latest
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kube-yaml-service
+  namespace: kube-yaml-svc
+spec:
+  selector:
+    app: kube-yaml-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+  type: ClusterIP
