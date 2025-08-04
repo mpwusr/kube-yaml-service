@@ -32,5 +32,5 @@ spec:
     - name: http
       port: 80
       targetPort: 8080
-      protocol: TCP
-  type: ClusterIP
+      nodePort: 30080
+  type: NodePort
