@@ -52,12 +52,22 @@ jobs:
         uses: azure/setup-kubectl@v4
       - uses: azure/setup-helm@v4
 
-      - name: Configure kubeconfig
-        run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
-          chmod 600 ~/.kube/config
-          kubectl config get-contexts
+      - name: Configure kubeconfig (Rancher Desktop VM)
+          shell: bash
+          run: |
+            # ensure Kubernetes is up in RD (optional but helpful)
+            rdctl kubernetes status || true
+            
+            # pull kubeconfig from the k3s VM and save it on the host
+            rdctl shell sudo cat /etc/rancher/k3s/k3s.yaml > "$HOME/k3s.yaml"
+            chmod 600 "$HOME/k3s.yaml"
+            
+            # make it available to all subsequent steps in this job
+            echo "KUBECONFIG=$HOME/k3s.yaml" >> "$GITHUB_ENV"
+            
+            # quick sanity
+            kubectl cluster-info
+            kubectl get nodes
 
       - name: Ensure namespace
         run: kubectl get ns $NAMESPACE || kubectl create ns $NAMESPACE
