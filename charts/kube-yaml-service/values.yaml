@@ -1,0 +1,27 @@
+image:
+  repository: docker.io/mpw07458/kube-yaml-service
+  tag: "latest"            # the workflow will override this with sha-<short>
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+podAnnotations: {}
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+service:
+  type: ClusterIP
+  port: 8080               # change if your app listens elsewhere
+  targetPort: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  hosts:
+    - host: kube-yaml.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []

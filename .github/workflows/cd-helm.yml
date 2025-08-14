@@ -1,0 +1,59 @@
+name: CD: Deploy kube-yaml-service (Helm)
+
+on:
+  workflow_dispatch: {}
+  # or trigger automatically after your CI build:
+  # workflow_run:
+  #   workflows: ["CI: Qodana → Build → Push to Docker Hub"]
+  #   types: [completed]
+
+env:
+  RELEASE_NAME: prod
+  NAMESPACE: apps
+  CHART_PATH: charts/kube-yaml-service
+  IMAGE_REPO: docker.io/mpw07458/kube-yaml-service
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate secrets
+        run: |
+          test -n "${{ secrets.KUBE_CONFIG }}" || (echo "Missing KUBE_CONFIG"; exit 1)
+
+      - name: Install kubectl + helm
+        uses: azure/setup-kubectl@v4
+      - uses: azure/setup-helm@v4
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+          kubectl config get-contexts
+
+      - name: Ensure namespace
+        run: kubectl get ns $NAMESPACE || kubectl create ns $NAMESPACE
+
+      - name: Compute image tag (sha-short) to deploy
+        id: tag
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "tag=sha-${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Helm upgrade/install
+        run: |
+          helm upgrade --install $RELEASE_NAME $CHART_PATH \
+            --namespace $NAMESPACE \
+            --set image.repository=$IMAGE_REPO \
+            --set image.tag=${{ steps.tag.outputs.tag }} \
+            --history-max 5
+
+      - name: Wait for rollout
+        run: |
+          kubectl -n $NAMESPACE rollout status deploy/${RELEASE_NAME}-kube-yaml-service --timeout=120s
+          kubectl -n $NAMESPACE get pods,svc
