@@ -1,40 +1,71 @@
-name: Build → Push Docker Hub → Deploy (Helm)
+name: CI → Build → Push (Docker Hub) → Deploy (Helm)
 
 on:
-  workflow_run:
-    workflows: ["Qodana"]   # must match the name: in your qodana workflow
-    types: [completed]
+  push:
+    branches: [ "main" ]
+  pull_request:
+  workflow_dispatch: {}
 
 env:
   IMAGE_NAME: kube-yaml-service
+  IMAGE_REPO: docker.io/mpw07458/kube-yaml-service
   DOCKER_BUILDKIT: 1
   RELEASE_NAME: prod
   NAMESPACE: apps
   CHART_PATH: charts/kube-yaml-service
-  IMAGE_REPO: docker.io/mpw07458/kube-yaml-service
 
 jobs:
+  qodana:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      checks: write
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Pre-build bytecode (skip tests)
+        run: ./gradlew --no-daemon clean assemble -x test
+
+      - name: Qodana Scan
+        uses: JetBrains/qodana-action@v2025.2
+        env:
+          QODANA_TOKEN: ${{ secrets.QODANA_TOKEN }}
+        with:
+          pr-mode: ${{ github.event_name == 'pull_request' }}
+          use-caches: true
+          post-pr-comment: true
+          use-annotations: true
+          upload-result: true
+
+      - name: Upload SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: qodana.sarif.json
+
   build-and-push:
-    # Gate on: Qodana success + originated from push to main
-    if: >
-      ${{
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.head_branch == 'main'
-      }}
+    needs: qodana
+    if: needs.qodana.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: read
-
     outputs:
       image_tag: ${{ steps.tag.outputs.tag }}
-
     steps:
-      - name: Checkout (same commit Qodana scanned)
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/checkout@v4
 
       - name: Validate Docker Hub creds
         run: |
@@ -51,21 +82,19 @@ jobs:
       - name: Build JAR
         run: ./gradlew --no-daemon clean build -x test
 
-      - name: Compute image tag (sha-short) — must match docker/metadata-action
+      - name: Compute image tag (sha-short)
         id: tag
-        env:
-          SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          SHORT_SHA="${SHA::7}"
+          SHORT_SHA="${GITHUB_SHA::7}"
           echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "Using image tag: sha-${SHORT_SHA}"
+          echo "Using tag: sha-${SHORT_SHA}"
 
       - name: Docker meta (tags/labels)
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: |
-            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+            ${{ env.IMAGE_REPO }}
           tags: |
             type=raw,value=${{ steps.tag.outputs.tag }}
             type=raw,value=latest,enable={{is_default_branch}}
@@ -99,41 +128,33 @@ jobs:
 
   deploy:
     needs: build-and-push
-    # only run if the build job actually ran (same gates) and produced a tag
-    if: ${{ needs.build-and-push.result == 'success' && needs.build-and-push.outputs.image_tag != '' }}
+    if: needs.build-and-push.result == 'success' && needs.build-and-push.outputs.image_tag != ''
+    # IMPORTANT: run on your self-hosted Mac so 127.0.0.1:6443 is reachable
     runs-on: [self-hosted, macos, deploy]
     permissions:
       contents: read
-
     steps:
       - uses: actions/checkout@v4
-      - name: Show runner info
-        run:
-          echo "Runner: $RUNNER_NAME / $RUNNER_OS / $RUNNER_ARCH"
-      - name: Validate kubeconfig secret
-        run: |
-          test -n "${{ secrets.KUBE_CONFIG }}" || (echo "Missing KUBE_CONFIG"; exit 1)
 
-      - name: Install kubectl + helm
-        uses: azure/setup-kubectl@v4
+      - name: Show runner info
+        run: echo "Runner: $RUNNER_NAME / $RUNNER_OS / $RUNNER_ARCH"
+
+      - uses: azure/setup-kubectl@v4
       - uses: azure/setup-helm@v4
 
+      # Pull kubeconfig from Rancher Desktop VM, export KUBECONFIG for this job
       - name: Configure kubeconfig (Rancher Desktop VM)
         shell: bash
         run: |
-            # ensure Kubernetes is up in RD (optional but helpful)
-            rdctl kubernetes status || true
+          # If rdctl isn't on PATH, add it (adjust path if needed)
+          which rdctl || export PATH="/Applications/Rancher Desktop.app/Contents/Resources/resources/darwin/bin:$PATH"
 
-            # pull kubeconfig from the k3s VM and save it on the host
-            rdctl shell sudo cat /etc/rancher/k3s/k3s.yaml > "$HOME/k3s.yaml"
-            chmod 600 "$HOME/k3s.yaml"
-
-            # make it available to all subsequent steps in this job
-            echo "KUBECONFIG=$HOME/k3s.yaml" >> "$GITHUB_ENV"
-
-            # quick sanity
-            kubectl cluster-info
-            kubectl get nodes
+          rdctl kubernetes status || true
+          rdctl shell sudo cat /etc/rancher/k3s/k3s.yaml > "$HOME/k3s.yaml"
+          chmod 600 "$HOME/k3s.yaml"
+          echo "KUBECONFIG=$HOME/k3s.yaml" >> "$GITHUB_ENV"
+          kubectl cluster-info
+          kubectl get nodes
 
       - name: Ensure namespace
         run: kubectl get ns $NAMESPACE || kubectl create ns $NAMESPACE
