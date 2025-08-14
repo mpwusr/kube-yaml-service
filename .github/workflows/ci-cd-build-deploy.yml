@@ -13,7 +13,6 @@ env:
   RELEASE_NAME: prod
   NAMESPACE: apps
   CHART_PATH: charts/kube-yaml-service
-
 jobs:
   qodana:
     runs-on: ubuntu-latest
@@ -39,33 +38,26 @@ jobs:
         run: ./gradlew --no-daemon clean assemble -x test
 
       - name: Qodana Scan
+        id: qodana
         uses: JetBrains/qodana-action@v2025.2
         env:
           QODANA_TOKEN: ${{ secrets.QODANA_TOKEN }}
         with:
+          results-dir: .qodana                  # <- force the output directory
           pr-mode: ${{ github.event_name == 'pull_request' }}
           use-caches: true
           post-pr-comment: true
           use-annotations: true
           upload-result: true
 
-      - name: Find SARIF path
-        id: sarif
-        shell: bash
-        run: |
-          set -e
-          if [ -f qodana/qodana.sarif.json ]; then
-            echo "path=qodana/qodana.sarif.json" >> "$GITHUB_OUTPUT"
-          elif [ -f qodana.sarif.json ]; then
-            echo "path=qodana.sarif.json" >> "$GITHUB_OUTPUT"
-          else
-            echo "No SARIF file found"; ls -la; ls -la qodana || true; exit 1
-          fi
+      # (optional) prove the SARIF exists where we expect
+      - name: List Qodana results
+        run: ls -la .qodana || true
 
-      - uses: github/codeql-action/upload-sarif@v3
+      - name: Upload SARIF to code scanning
+        uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: ${{ steps.sarif.outputs.path }}
-
+          sarif_file: .qodana/qodana.sarif.json  # <- correct path
 
   build-and-push:
     needs: qodana
