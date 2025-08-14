@@ -1,11 +1,14 @@
 name: CD: Deploy kube-yaml-service (Helm)
 
 on:
+  # auto-trigger when your build workflow completes
+  workflow_run:
+    workflows:
+      - "CI: Qodana → Build → Push to Docker Hub"
+      - "Build & Push Docker image to Docker Hub"
+    types: [completed]
+  # also allow manual runs from the UI
   workflow_dispatch: {}
-  # or trigger automatically after your CI build:
-  # workflow_run:
-  #   workflows: ["CI: Qodana → Build → Push to Docker Hub"]
-  #   types: [completed]
 
 env:
   RELEASE_NAME: prod
@@ -14,14 +17,33 @@ env:
   IMAGE_REPO: docker.io/mpw07458/kube-yaml-service
 
 jobs:
+  # optional: shows exactly what triggered us (great for debugging)
+  debug:
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "event_name:               ${{ github.event_name }}"
+          echo "workflow_run.name:        ${{ github.event.workflow_run.name }}"
+          echo "workflow_run.conclusion:  ${{ github.event.workflow_run.conclusion }}"
+          echo "workflow_run.event:       ${{ github.event.workflow_run.event }}"
+          echo "workflow_run.head_branch: ${{ github.event.workflow_run.head_branch }}"
+          echo "workflow_run.head_sha:    ${{ github.event.workflow_run.head_sha }}"
+
   deploy:
+    # allow manual runs OR successful main-branch builds
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     permissions:
       contents: read
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate secrets
+      - name: Validate kubeconfig secret
         run: |
           test -n "${{ secrets.KUBE_CONFIG }}" || (echo "Missing KUBE_CONFIG"; exit 1)
 
@@ -39,11 +61,18 @@ jobs:
       - name: Ensure namespace
         run: kubectl get ns $NAMESPACE || kubectl create ns $NAMESPACE
 
-      - name: Compute image tag (sha-short) to deploy
+      - name: Compute image tag from upstream build
         id: tag
+        shell: bash
         run: |
-          SHORT_SHA="${GITHUB_SHA::7}"
-          echo "tag=sha-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            SHA="${{ github.event.workflow_run.head_sha }}"
+          else
+            SHA="${GITHUB_SHA}"
+          fi
+          SHORT_SHA="${SHA::7}"
+          echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Using tag: sha-${SHORT_SHA}"
 
       - name: Helm upgrade/install
         run: |
@@ -55,5 +84,5 @@ jobs:
 
       - name: Wait for rollout
         run: |
-          kubectl -n $NAMESPACE rollout status deploy/${RELEASE_NAME}-kube-yaml-service --timeout=120s
+          kubectl -n $NAMESPACE rollout status deploy/${RELEASE_NAME}-kube-yaml-service --timeout=180s
           kubectl -n $NAMESPACE get pods,svc
