@@ -49,11 +49,23 @@ jobs:
           use-annotations: true
           upload-result: true
 
-      - name: Upload SARIF to code scanning
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Find SARIF path
+        id: sarif
+        shell: bash
+        run: |
+          set -e
+          if [ -f qodana/qodana.sarif.json ]; then
+            echo "path=qodana/qodana.sarif.json" >> "$GITHUB_OUTPUT"
+          elif [ -f qodana.sarif.json ]; then
+            echo "path=qodana.sarif.json" >> "$GITHUB_OUTPUT"
+          else
+            echo "No SARIF file found"; ls -la; ls -la qodana || true; exit 1
+          fi
+
+      - uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: qodana.sarif.json
+          sarif_file: ${{ steps.sarif.outputs.path }}
+
 
   build-and-push:
     needs: qodana
