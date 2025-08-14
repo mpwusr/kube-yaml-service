@@ -119,8 +119,8 @@ jobs:
       - uses: azure/setup-helm@v4
 
       - name: Configure kubeconfig (Rancher Desktop VM)
-          shell: bash
-          run: |
+        shell: bash
+        run: |
             # ensure Kubernetes is up in RD (optional but helpful)
             rdctl kubernetes status || true
 
