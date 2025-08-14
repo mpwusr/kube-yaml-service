@@ -20,7 +20,7 @@ jobs:
   # optional: shows exactly what triggered us (great for debugging)
   debug:
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: [ self-hosted, macos, deploy ]
     steps:
       - run: |
           echo "event_name:               ${{ github.event_name }}"
