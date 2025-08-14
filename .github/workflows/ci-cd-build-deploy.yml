@@ -137,9 +137,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Show runner info
-        run: echo "Runner: $RUNNER_NAME / $RUNNER_OS / $RUNNER_ARCH"
+        shell: bash
+        run: |
+          echo "Runner: $RUNNER_NAME / $RUNNER_OS / $RUNNER_ARCH"
 
       - uses: azure/setup-kubectl@v4
+      - uses: azure/setup-helm@v4
       - uses: azure/setup-helm@v4
 
       # Pull kubeconfig from Rancher Desktop VM, export KUBECONFIG for this job
