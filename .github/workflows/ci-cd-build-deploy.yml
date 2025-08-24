@@ -13,6 +13,7 @@ env:
   RELEASE_NAME: prod
   NAMESPACE: apps
   CHART_PATH: charts/kube-yaml-service
+
 jobs:
   qodana:
     runs-on: ubuntu-latest
@@ -43,21 +44,20 @@ jobs:
         env:
           QODANA_TOKEN: ${{ secrets.QODANA_TOKEN }}
         with:
-          results-dir: .qodana                  # <- force the output directory
+          results-dir: .qodana
           pr-mode: ${{ github.event_name == 'pull_request' }}
           use-caches: true
           post-pr-comment: true
           use-annotations: true
           upload-result: true
 
-      # (optional) prove the SARIF exists where we expect
       - name: List Qodana results
         run: ls -la .qodana || true
 
       - name: Upload SARIF to code scanning
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: .qodana/qodana.sarif.json  # <- correct path
+          sarif_file: .qodana/qodana.sarif.json
 
   build-and-push:
     needs: qodana
@@ -68,6 +68,7 @@ jobs:
       packages: read
     outputs:
       image_tag: ${{ steps.tag.outputs.tag }}
+      image_repo: ${{ env.IMAGE_REPO }}
     steps:
       - uses: actions/checkout@v4
 
@@ -131,50 +132,86 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy:
+    name: Deploy (Helm) to EKS & AKS
+    # Deploy only on main pushes or manual runs; skip for PRs
+    if: |
+      needs.build-and-push.result == 'success' &&
+      needs.build-and-push.outputs.image_tag != '' &&
+      (github.event_name != 'pull_request')
     needs: build-and-push
-    if: needs.build-and-push.result == 'success' && needs.build-and-push.outputs.image_tag != ''
-    # IMPORTANT: run on your self-hosted Mac so 127.0.0.1:6443 is reachable
-    runs-on: [self-hosted, macos, deploy]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [ "eks", "aks" ]
     permissions:
       contents: read
+      id-token: write   # for AWS/GCP/Azure federated auth
+    env:
+      IMAGE_REPO: ${{ needs.build-and-push.outputs.image_repo }}
+      IMAGE_TAG:  ${{ needs.build-and-push.outputs.image_tag }}
+      CHART_PATH: ${{ env.CHART_PATH }}
+      RELEASE_NAME: ${{ env.RELEASE_NAME }}
+      NAMESPACE: ${{ env.NAMESPACE }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show runner info
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Install helm
+        uses: azure/setup-helm@v4
+
+      # ---------- EKS context ----------
+      - name: Configure AWS creds (EKS)
+        if: matrix.target == 'eks'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}   # OR use access keys below
+          aws-region: ${{ secrets.AWS_REGION }}
+          # If not assuming a role, use:
+          # aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          # aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Set kubectl context (EKS)
+        if: matrix.target == 'eks'
         shell: bash
         run: |
-          echo "Runner: $RUNNER_NAME / $RUNNER_OS / $RUNNER_ARCH"
-
-      - uses: azure/setup-kubectl@v4
-      - uses: azure/setup-helm@v4
-      - uses: azure/setup-helm@v4
-
-      # Pull kubeconfig from Rancher Desktop VM, export KUBECONFIG for this job
-      - name: Configure kubeconfig (Rancher Desktop VM)
-        shell: bash
-        run: |
-          # If rdctl isn't on PATH, add it (adjust path if needed)
-          which rdctl || export PATH="/Applications/Rancher Desktop.app/Contents/Resources/resources/darwin/bin:$PATH"
-
-          rdctl kubernetes status || true
-          rdctl shell sudo cat /etc/rancher/k3s/k3s.yaml > "$HOME/k3s.yaml"
-          chmod 600 "$HOME/k3s.yaml"
-          echo "KUBECONFIG=$HOME/k3s.yaml" >> "$GITHUB_ENV"
+          test -n "${{ secrets.EKS_CLUSTER_NAME }}" || (echo "Missing EKS_CLUSTER_NAME secret"; exit 1)
+          test -n "${{ secrets.AWS_REGION }}" || (echo "Missing AWS_REGION secret"; exit 1)
+          aws eks update-kubeconfig --name "${{ secrets.EKS_CLUSTER_NAME }}" --region "${{ secrets.AWS_REGION }}"
+          kubectl version --client
           kubectl cluster-info
-          kubectl get nodes
 
+      # ---------- AKS context ----------
+      - name: Azure login
+        if: matrix.target == 'aks'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }} # JSON: { "clientId": "...", "clientSecret": "...", "subscriptionId": "...", "tenantId": "..." }
+
+      - name: Set kubectl context (AKS)
+        if: matrix.target == 'aks'
+        uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ secrets.AKS_RESOURCE_GROUP }}
+          cluster-name:   ${{ secrets.AKS_CLUSTER_NAME }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # ---------- Common deploy steps ----------
       - name: Ensure namespace
-        run: kubectl get ns $NAMESPACE || kubectl create ns $NAMESPACE
+        run: kubectl get ns "$NAMESPACE" || kubectl create ns "$NAMESPACE"
 
       - name: Helm upgrade/install
         run: |
-          helm upgrade --install $RELEASE_NAME $CHART_PATH \
-            --namespace $NAMESPACE \
-            --set image.repository=$IMAGE_REPO \
-            --set image.tag='${{ needs.build-and-push.outputs.image_tag }}' \
+          helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" \
+            --namespace "$NAMESPACE" \
+            --set image.repository="$IMAGE_REPO" \
+            --set image.tag="$IMAGE_TAG" \
             --history-max 5
 
       - name: Wait for rollout
         run: |
-          kubectl -n $NAMESPACE rollout status deploy/${RELEASE_NAME}-kube-yaml-service --timeout=180s
-          kubectl -n $NAMESPACE get pods,svc
+          # Assumes your chart names Deployment: {{ .Release.Name }}-kube-yaml-service
+          kubectl -n "$NAMESPACE" rollout status deploy/${RELEASE_NAME}-kube-yaml-service --timeout=180s
+          kubectl -n "$NAMESPACE" get pods,svc
